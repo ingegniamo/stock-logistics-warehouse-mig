@@ -1,2 +1,0 @@
-- Benoît GUILLOT \<benoit.guillot@akretion.com\>
-- Sébastien Alix \<sebastien.alix@akretion.com\>

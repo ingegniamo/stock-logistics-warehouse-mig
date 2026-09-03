@@ -1,2 +1,0 @@
-- [Quartile](https://www.quartile.co):
-  - Shinnosuke Morita

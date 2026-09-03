@@ -1,3 +1,0 @@
-- [ForgeFlow](https://www.forgeflow.com):
-  - Laura Cazorla
-  - Joan Sisquella
