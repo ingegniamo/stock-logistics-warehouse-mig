@@ -9,7 +9,9 @@ class TestProcurementAutoCreateGroup(TransactionCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.env = cls.env(context=dict(cls.env.context, tracking_disable=True))
-        cls.group_obj = cls.env["procurement.group"]
+        # Odoo 19 removed procurement.group: references replace it and
+        # stock.rule carries both the Procurement tuple and run().
+        cls.reference_obj = cls.env["stock.reference"]
         cls.rule_obj = cls.env["stock.rule"]
         cls.route_obj = cls.env["stock.route"]
         cls.move_obj = cls.env["stock.move"]
@@ -20,7 +22,9 @@ class TestProcurementAutoCreateGroup(TransactionCase):
         cls.location = cls.env.ref("stock.stock_location_stock")
         cls.company_id = cls.env.ref("base.main_company")
         cls.supplier_location = cls.env.ref("stock.stock_location_suppliers")
-        cls.loc_components = cls.env.ref("stock.stock_location_components")
+        # Odoo 19 no longer ships stock.stock_location_components: the packing
+        # zone is the internal location left that is not WH/Stock itself.
+        cls.loc_components = cls.env.ref("stock.location_pack_zone")
         picking_type_id = cls.env.ref("stock.picking_type_internal").id
 
         cls.partner = cls.env["res.partner"].create({"name": "Partner"})
@@ -116,16 +120,16 @@ class TestProcurementAutoCreateGroup(TransactionCase):
             }
         )
 
-        cls.group = cls.group_obj.create({"name": "SO0001"})
+        cls.reference = cls.reference_obj.create({"name": "SO0001"})
 
     @classmethod
     def _procure(cls, product):
         values = {
-            "group_id": cls.group,
+            "reference_ids": cls.reference,
         }
-        cls.group_obj.run(
+        cls.rule_obj.run(
             [
-                cls.env["procurement.group"].Procurement(
+                cls.rule_obj.Procurement(
                     product,
                     5.0,
                     product.uom_id,
@@ -151,7 +155,6 @@ class TestProcurementAutoCreateGroup(TransactionCase):
                         0,
                         0,
                         {
-                            "name": "Test move",
                             "product_id": product.id,
                             "date_deadline": "2099-06-01 18:00:00",
                             "date": "2099-06-01 18:00:00",
@@ -168,8 +171,8 @@ class TestProcurementAutoCreateGroup(TransactionCase):
         picking.move_ids.write({"quantity": 1.0})
         picking.button_validate()
 
-    def test_01_pull_push_no_auto_create_group(self):
-        """Test auto creation of group."""
+    def test_01_pull_push_no_auto_create_reference(self):
+        """The reference given to the run is the one that reaches the move."""
         move = self.move_obj.search(
             [("product_id", "=", self.prod_no_auto_pull_push.id)]
         )
@@ -180,34 +183,39 @@ class TestProcurementAutoCreateGroup(TransactionCase):
         )
         self.assertTrue(move)
         self.assertEqual(
-            move.group_id,
-            self.group,
-            "Procurement Group should not have been assigned.",
+            move.reference_ids,
+            self.reference,
+            "No reference of its own should have been created.",
         )
 
-    def test_02_pull_push_auto_create_group(self):
+    def test_02_pull_push_auto_create_reference(self):
         move = self.move_obj.search([("product_id", "=", self.prod_auto_pull_push.id)])
         self.assertFalse(move)
         self._procure(self.prod_auto_pull_push)
         move = self.move_obj.search([("product_id", "=", self.prod_auto_pull_push.id)])
         self.assertTrue(move)
-        self.assertTrue(move.group_id, "Procurement Group not assigned.")
-        self.assertEqual(
-            move.group_id.partner_id,
-            self.partner,
-            "Procurement Group partner missing.",
+        self.assertTrue(move.reference_ids, "Reference not assigned.")
+        self.assertNotEqual(
+            move.reference_ids,
+            self.reference,
+            "The rule should have replaced the reference with a new one.",
+        )
+        self.assertTrue(
+            move.reference_ids.name.startswith("AUTO/"),
+            "The reference should be named from the module sequence, got %r"
+            % move.reference_ids.name,
         )
 
-    def test_03_onchange_method(self):
-        """Test onchange method for stock rule."""
-        proc_rule = self.push_rule_auto
-        self.assertTrue(proc_rule.auto_create_group)
-        proc_rule.write({"group_propagation_option": "none"})
-        proc_rule._onchange_group_propagation_option()
-        self.assertFalse(proc_rule.auto_create_group)
+    def test_03_the_switch_stands_alone(self):
+        """Odoo 19 removed group_propagation_option, which used to clear it."""
+        self.assertTrue(self.push_rule_auto.auto_create_group)
+        self.assertNotIn("group_propagation_option", self.rule_obj._fields)
+        self.assertFalse(
+            hasattr(self.rule_obj, "_onchange_group_propagation_option"),
+            "The onchange guarded a field that no longer exists.",
+        )
 
-    def test_04_push_no_auto_create_group(self):
-        """Test no auto creation of group."""
+    def test_04_push_no_auto_create_reference(self):
         move = self.move_obj.search(
             [
                 ("product_id", "=", self.prod_no_auto_push.id),
@@ -224,11 +232,10 @@ class TestProcurementAutoCreateGroup(TransactionCase):
         )
         self.assertTrue(move)
         self.assertFalse(
-            move.group_id, "Procurement Group should not have been assigned."
+            move.reference_ids, "No reference should have been assigned."
         )
 
-    def test_05_push_auto_create_group(self):
-        """Test auto creation of group."""
+    def test_05_push_auto_create_reference(self):
         move = self.move_obj.search(
             [
                 ("product_id", "=", self.prod_auto_push.id),
@@ -244,4 +251,4 @@ class TestProcurementAutoCreateGroup(TransactionCase):
             ]
         )
         self.assertTrue(move)
-        self.assertTrue(move.group_id, "Procurement Group not assigned.")
+        self.assertTrue(move.reference_ids, "Reference not assigned.")

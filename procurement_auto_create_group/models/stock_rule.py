@@ -4,34 +4,47 @@
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+from odoo.fields import Command
 
 
 class StockRule(models.Model):
     _inherit = "stock.rule"
 
-    auto_create_group = fields.Boolean(string="Auto-create Procurement Group")
+    auto_create_group = fields.Boolean(
+        string="Auto-create Reference",
+        help="Give every procurement run through this rule a reference of its "
+        "own, so its moves are not grouped with the ones already in progress.",
+    )
 
-    @api.onchange("group_propagation_option")
-    def _onchange_group_propagation_option(self):
-        if self.group_propagation_option != "propagate":
-            self.auto_create_group = False
+    @api.model
+    def _get_rule(self, product_id, location_id, values):
+        # Odoo 18 and earlier carried this override on procurement.group, a
+        # model Odoo 19 removed: _get_rule now lives on stock.rule.
+        rule = super()._get_rule(product_id, location_id, values)
+        # Without a planned date the call comes from outside a procurement run.
+        if rule and rule.auto_create_group and values.get("date_planned"):
+            values["reference_ids"] = rule._get_auto_stock_reference(product_id)
+        return rule
 
-    def _get_auto_procurement_group(self, product):
-        group_data = self._prepare_auto_procurement_group_data(product)
-        return self.env["procurement.group"].create(group_data)
+    def _get_auto_stock_reference(self, product):
+        return self.env["stock.reference"].create(
+            self._prepare_auto_stock_reference_data(product)
+        )
 
     def _push_prepare_move_copy_values(self, move_to_copy, new_date):
         new_move_vals = super()._push_prepare_move_copy_values(move_to_copy, new_date)
         if self.auto_create_group:
-            group = self._get_auto_procurement_group(move_to_copy.product_id)
-            new_move_vals["group_id"] = group.id
+            reference = self._get_auto_stock_reference(move_to_copy.product_id)
+            new_move_vals["reference_ids"] = [Command.set(reference.ids)]
         return new_move_vals
 
-    def _prepare_auto_procurement_group_data(self, product):
-        name = self.env["ir.sequence"].next_by_code("procurement.group") or False
+    def _prepare_auto_stock_reference_data(self, product):
+        name = (
+            self.env["ir.sequence"].next_by_code("procurement.auto.create.group")
+            or False
+        )
         if not name:
-            raise UserError(_("No sequence defined for procurement group."))
-        return {
-            "name": name,
-            "partner_id": self.partner_address_id.id,
-        }
+            raise UserError(_("No sequence defined for the automatic reference."))
+        # stock.reference holds a name and links to documents. The partner the
+        # procurement group used to carry has no counterpart on it.
+        return {"name": name}

@@ -5,11 +5,10 @@
         <field name="model">stock.rule</field>
         <field name="inherit_id" ref="stock.view_stock_rule_form" />
         <field name="arch" type="xml">
-            <field name="group_propagation_option" position="after">
-                <field
-                    name="auto_create_group"
-                    invisible="group_propagation_option != 'propagate'"
-                />
+            <!-- Anchored on propagate_cancel: Odoo 19 removed
+                 group_propagation_option, which used to sit here. -->
+            <field name="propagate_cancel" position="after">
+                <field name="auto_create_group" />
             </field>
         </field>
     </record>

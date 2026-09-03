@@ -28,15 +28,18 @@ Procurement Auto Create Group
 
 |badge1| |badge2| |badge3| |badge4| |badge5|
 
-This module allows the system to propose automatically new procurement
-groups during the procurement run.
+This module gives every procurement run a stock reference of its own, so
+its moves are never mixed in a transfer with moves from other runs.
 
-This capability is important when you want to make sure that all the
-stock moves resulting from a procurement run will never be mixed with
-moves from other groups in stock transfers.
+The transfers resulting from the run then contain only the stock moves
+created in that run.
 
-The stock transfers resulting from the procurement run will only contain
-stock moves created in that run.
+Odoo 19 note: the model ``procurement.group`` no longer exists. Odoo
+replaced it with ``stock.reference``, a name plus links to the documents
+involved, and the moves carry ``reference_ids`` instead of ``group_id``.
+This module creates one of those references. The partner the procurement
+group used to carry has no counterpart on a reference, so it is no longer
+set.
 
 **Table of contents**
 
@@ -59,11 +62,14 @@ Configuration
 Usage
 =====
 
-1. Run a new procurement and make sure that it determines a rule with
-   the option 'Auto-create Procurement Group' set.
-2. When the procurement rule is executed, a procurement group with
-   format 'PG/000001' will be created. You can find this procurement
-   group in 'Additional info' tab of a transfer.
+1. Run a new procurement and make sure it determines a rule with the
+   option 'Auto-create Reference' set.
+2. When the rule runs, a stock reference named 'AUTO/00001' is created
+   and carried by the resulting moves. You can find it in the
+   'Additional info' tab of a transfer.
+
+The sequence behind that name ships with this module. Odoo 19 dropped the
+one ``stock`` used to provide for procurement groups.
 
 Bug Tracker
 ===========
