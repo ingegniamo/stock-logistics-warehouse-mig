@@ -45,12 +45,27 @@ class SaleOrderLine(models.Model):
         return super()._get_outgoing_incoming_moves(strict=strict)
 
     def _has_mts_mto_moves(self):
-        """Vero se i movimenti della riga vengono dalle sottoregole di una MTS+MTO."""
-        rules = self.move_ids.rule_id
-        if not rules:
+        """Vero se lo split e' davvero avvenuto su questa riga.
+
+        Servono movimenti da **entrambe** le sottoregole della stessa regola di split.
+        Bastarne una sarebbe sbagliato: la sottoregola MTS e' la regola di consegna
+        **standard** del magazzino (``WH: Stock -> Customers``), quella che usano tutti i
+        prodotti, anche quelli che con la rotta MTS+MTO non c'entrano nulla. Con un
+        predicato cosi' largo l'override scatterebbe su ogni riga d'ordine del
+        magazzino, e il limite noto sulle consegne a piu' fasi non riguarderebbe piu'
+        solo le righe con lo split.
+
+        Quando lo split non avviene — giacenza sufficiente o nulla — la riga ha un solo
+        movimento, la sua regola e' l'unica scatenante e ``strict=False`` la conta gia'
+        correttamente: qui non c'e' niente da correggere.
+        """
+        rule_ids = set(self.move_ids.rule_id.ids)
+        if not rule_ids:
             return False
         split_rules = self.env["stock.rule"].search(
             [("action", "=", "split_procurement")]
         )
-        sub_rules = split_rules.mts_rule_id | split_rules.mto_rule_id
-        return bool(set(rules.ids) & set(sub_rules.ids))
+        return any(
+            split.mts_rule_id.id in rule_ids and split.mto_rule_id.id in rule_ids
+            for split in split_rules
+        )
